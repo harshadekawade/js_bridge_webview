@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NativeBridge Demo</title>
+  <style>
+    :root {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --border:  #334155;
+      --text:    #f1f5f9;
+      --muted:   #94a3b8;
+      --accent:  #6366f1;
+      --green:   #4ade80;
+      --red:     #f87171;
+      --yellow:  #fbbf24;
+      --purple:  #c4b5fd;
+      --radius:  10px;
+      --mono:    'Courier New', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 16px;
+      max-width: 540px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    .header { margin-bottom: 16px; }
+    .header h1 { font-size: 20px; font-weight: 700; }
+    .header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      margin-bottom: 14px;
+    }
+    .dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--red);
+      box-shadow: 0 0 0 3px rgba(248,113,113,.2);
+      transition: background .3s, box-shadow .3s;
+    }
+    .dot.ready   { background: var(--green);  box-shadow: 0 0 0 3px rgba(74,222,128,.2); }
+    .dot.partial { background: var(--yellow); box-shadow: 0 0 0 3px rgba(251,191,36,.2); }
+    #statusText  { font-size: 13px; color: var(--muted); }
+
+    /* ── Warning banner (shown in browser, hidden in WebView) ── */
+    .browser-warn {
+      display: none;
+      background: rgba(251,191,36,.1);
+      border: 1px solid rgba(251,191,36,.3);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--yellow);
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .browser-warn.visible { display: block; }
+
+    /* ── Button grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    button {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: 12px 12px 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      transition: background .15s, border-color .15s, opacity .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button:hover   { background: #263249; border-color: var(--accent); }
+    button:active  { transform: scale(.97); }
+    button.danger  { border-color: #7f1d1d; }
+    button.danger:hover { background: #2d1b1b; border-color: var(--red); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+
+    .btn-icon  { font-size: 16px; }
+    .btn-title { font-size: 13px; line-height: 1.2; }
+    .btn-sub   { font-size: 11px; color: var(--muted); font-weight: 400; }
+
+    /* ── Log panel ── */
+    .log-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .log-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .log-header span {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1.4px;
+      font-weight: 700;
+    }
+    #pendingBadge {
+      font-size: 10px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 99px;
+      padding: 1px 6px;
+      display: none;
+    }
+    .log-clear {
+      background: none !important;
+      border: none !important;
+      color: var(--muted) !important;
+      font-size: 11px;
+      padding: 2px 6px !important;
+      cursor: pointer;
+      border-radius: 4px !important;
+    }
+    .log-clear:hover { background: var(--border) !important; color: var(--text) !important; }
+
+    #logList {
+      height: 240px;
+      overflow-y: auto;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    #logList::-webkit-scrollbar { width: 4px; }
+    #logList::-webkit-scrollbar-track { background: transparent; }
+    #logList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .log-entry {
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.5;
+      padding: 2px 5px;
+      border-radius: 3px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-entry.info    { color: #93c5fd; }
+    .log-entry.success { color: var(--green); }
+    .log-entry.error   { color: var(--red); background: rgba(248,113,113,.06); }
+    .log-entry.warn    { color: var(--yellow); }
+    .log-entry.send    { color: var(--purple); }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>🔌 NativeBridge Demo</h1>
+    <p>Web ↔ Flutter communication test harness</p>
+  </div>
+
+  <div class="status-bar">
+    <div class="dot" id="bridgeDot"></div>
+    <span id="statusText">Checking bridge…</span>
+  </div>
+
+  <div class="browser-warn" id="browserWarn">
+    ⚠️ <strong>AppBridge not detected.</strong> This page is running in a regular
+    browser. Open it inside the Flutter WebView to enable native communication.
+    Buttons will show console errors gracefully.
+  </div>
+
+  <div class="grid">
+    <button onclick="doPing()">
+      <span class="btn-icon">🏓</span>
+      <span class="btn-title">Ping</span>
+      <span class="btn-sub">Basic roundtrip test</span>
+    </button>
+    <button onclick="doGetProfile()">
+      <span class="btn-icon">👤</span>
+      <span class="btn-title">Get User Profile</span>
+      <span class="btn-sub">Fetch native user data</span>
+    </button>
+    <button onclick="doGetDeviceInfo()">
+      <span class="btn-icon">📱</span>
+      <span class="btn-title">Device Info</span>
+      <span class="btn-sub">OS, version, platform</span>
+    </button>
+    <button onclick="doSavePref()">
+      <span class="btn-icon">💾</span>
+      <span class="btn-title">Save Preference</span>
+      <span class="btn-sub">Write key/value to native</span>
+    </button>
+    <button onclick="doTokenCheck()">
+      <span class="btn-icon">🔑</span>
+      <span class="btn-title">Token Status</span>
+      <span class="btn-sub">Check in-memory token</span>
+    </button>
+    <button onclick="doTriggerError()" class="danger">
+      <span class="btn-icon">💥</span>
+      <span class="btn-title">Trigger Error</span>
+      <span class="btn-sub">Test rejection path</span>
+    </button>
+  </div>
+
+  <div class="log-panel">
+    <div class="log-header">
+      <div class="log-header-left">
+        <span>📋 BRIDGE LOG</span>
+        <span id="pendingBadge">0 pending</span>
+      </div>
+      <button class="log-clear" onclick="clearLogs()">clear</button>
+    </div>
+    <div id="logList">
+      <div class="log-entry info">Ready — tap a button above.</div>
+    </div>
+  </div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     NativeBridge Module
+     Secure communication layer between the Web app and the Flutter WebView.
+     This script is self-contained — no build tools or bundlers required.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+/**
+ * NativeBridge — Singleton module for Flutter ↔ Web communication.
+ *
+ * Security model:
+ *  - Bridge target is hard-coded to `window.AppBridge` (no dynamic targeting).
+ *  - Session token lives only in the IIFE closure; never written to any
+ *    persistent storage (localStorage, sessionStorage, cookies, IndexedDB).
+ *  - Every request carries a cryptographically random UUID nonce.
+ *  - Inbound responses are validated and cross-referenced by nonce before
+ *    dispatching — unknown IDs are silently dropped (replay protection).
+ *  - Public API is frozen; cannot be mutated by external scripts.
+ */
+const NativeBridge = (() => {
+
+  // ── Private state ────────────────────────────────────────────────────────
+
+  /** @type {string|null} In-memory session token. NEVER persisted. */
+  let _sessionToken = null;
+
+  /**
+   * Pending-request registry.
+   * @type {Map<string, {resolve: Function, reject: Function, timeoutId: number}>}
+   */
+  const _pending = new Map();
+
+  const REQUEST_TIMEOUT_MS = 15_000;
+
+  /**
+   * Hard-coded bridge target.
+   * Security: No dynamic selection possible — eliminates arbitrary-postMessage risk.
+   */
+  const BRIDGE_TARGET = 'AppBridge';
+
+  // ── Private helpers ──────────────────────────────────────────────────────
+
+  /**
+   * Generates a v4 UUID via Web Crypto API.
+   * Security: 122 bits of randomness — never use Math.random() for nonces.
+   * @returns {string}
+   */
+  function _uuid() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    // Typed-array fallback for older WebViews
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    return [...b].map((v, i) =>
+      ([4, 6, 8, 10].includes(i) ? '-' : '') + v.toString(16).padStart(2, '0')
+    ).join('');
+  }
+
+  /**
+   * Structural bridge validation.
+   * Security: Verifies both existence and callability — a spoofed global
+   * that lacks a real `postMessage` function will fail this check.
+   * @returns {boolean}
+   */
+  function _available() {
+    const b = window[BRIDGE_TARGET];
+    return b != null && typeof b.postMessage === 'function';
+  }
+
+  /**
+   * Serialise and dispatch an envelope to the native layer.
+   * Security: JSON.stringify prevents raw object references crossing the bridge.
+   * The session token is injected here, never exposed to callers.
+   */
+  function _dispatch(action, payload, requestId) {
+    const envelope = {
+      requestId,
+      action,
+      payload,
+      ...(_sessionToken !== null && { sessionToken: _sessionToken }),
+      timestamp: Date.now(),
+    };
+    window[BRIDGE_TARGET].postMessage(JSON.stringify(envelope));
+  }
+
+  /** Remove a pending entry and cancel its timeout guard. */
+  function _settle(id) {
+    const e = _pending.get(id);
+    if (e) { clearTimeout(e.timeoutId); _pending.delete(id); }
+  }
+
+  // ── Global inbound handler ───────────────────────────────────────────────
+
+  /**
+   * Called by Flutter via: controller.runJavaScript('window.onNativeResponse(...)')
+   *
+   * Security:
+   *  - Shape-validated before any data is used.
+   *  - requestId cross-referenced against _pending; unknown IDs discarded
+   *    immediately (replay attack mitigation).
+   *  - Errors treated as plain strings — never eval'd or injected as HTML
+   *    (XSS via bridge error message mitigation).
+   *
+   * @param {object} response
+   */
+  window.onNativeResponse = function onNativeResponse(response) {
+    if (
+      response == null ||
+      typeof response !== 'object' ||
+      typeof response.requestId !== 'string' ||
+      typeof response.success !== 'boolean'
+    ) {
+      console.warn('[NativeBridge] Malformed response — discarding.', response);
+      return;
+    }
+
+    const { requestId, success, data, error } = response;
+
+    if (!_pending.has(requestId)) {
+      console.warn(`[NativeBridge] Unknown requestId "${requestId}" — possible replay.`);
+      return;
+    }
+
+    const { resolve, reject } = _pending.get(requestId);
+    _settle(requestId);
+
+    success
+      ? resolve(data)
+      : reject(new Error(typeof error === 'string' ? error : 'Native error.'));
+  };
+
+  // ── Public API ───────────────────────────────────────────────────────────
+
+  const api = {
+
+    /**
+     * Send a request to the native layer. Returns a Promise.
+     *
+     * Security:
+     *  - Fresh UUID nonce minted per call.
+     *  - Timeout guard rejects and cleans up if native never responds.
+     *  - Bridge availability checked before any postMessage call.
+     *
+     * @param  {string} action
+     * @param  {object} [payload={}]
+     * @param  {number} [timeoutMs]
+     * @returns {Promise<*>}
+     */
+    request(action, payload = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+      return new Promise((resolve, reject) => {
+        if (!_available()) {
+          const msg = `[NativeBridge] "${BRIDGE_TARGET}" is not available.`;
+          console.warn(msg);
+          return reject(new Error(msg));
+        }
+        if (typeof action !== 'string' || !action.trim()) {
+          return reject(new Error('[NativeBridge] action must be a non-empty string.'));
+        }
+
+        const requestId = _uuid();
+
+        const timeoutId = setTimeout(() => {
+          if (_pending.has(requestId)) {
+            _pending.delete(requestId);
+            reject(new Error(`[NativeBridge] "${action}" timed out after ${timeoutMs}ms.`));
+          }
+        }, timeoutMs);
+
+        _pending.set(requestId, { resolve, reject, timeoutId });
+
+        try {
+          _dispatch(action, payload, requestId);
+        } catch (err) {
+          _settle(requestId);
+          reject(new Error(`[NativeBridge] Dispatch failed: ${err.message}`));
+        }
+      });
+    },
+
+    /**
+     * Receive and store a session token from the native app.
+     *
+     * Security:
+     *  - NEVER writes to localStorage / sessionStorage / cookies / IndexedDB.
+     *  - Token lives only in the IIFE closure for this page's lifetime.
+     *  - Called by Flutter: controller.runJavaScript("NativeBridge.setSessionToken('...')")
+     *
+     * @param {string} token
+     */
+    setSessionToken(token) {
+      if (typeof token !== 'string' || !token.trim()) {
+        console.error('[NativeBridge] setSessionToken: invalid token — ignoring.');
+        return;
+      }
+      _sessionToken = token;
+      console.info('[NativeBridge] Session token stored in-memory.');
+      // Notify the UI layer that a token arrived
+      window.dispatchEvent(new CustomEvent('nativebridge:tokenset'));
+    },
+
+    /** Wipe the in-memory session token (call on logout). */
+    clearSessionToken() {
+      _sessionToken = null;
+      window.dispatchEvent(new CustomEvent('nativebridge:tokencleared'));
+    },
+
+    /** @returns {boolean} Whether a token is currently held in memory. */
+    hasSessionToken() { return _sessionToken !== null; },
+
+    /** @returns {boolean} Whether the Flutter bridge channel is reachable. */
+    isAvailable() { return _available(); },
+
+    /** @returns {number} Number of requests awaiting a native response. */
+    pendingCount() { return _pending.size; },
+  };
+
+  return Object.freeze(api);
+})();
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     UI Controller — completely decoupled from NativeBridge internals
+     ═══════════════════════════════════════════════════════════════════════ -->
+<script>
+(() => {
+  const logList    = document.getElementById('logList');
+  const dot        = document.getElementById('bridgeDot');
+  const statusText = document.getElementById('statusText');
+  const badge      = document.getElementById('pendingBadge');
+  const warn       = document.getElementById('browserWarn');
+
+  // ── Timestamp helper ─────────────────────────────────────────────────────
+  function ts() {
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `[${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}]`;
+  }
+
+  // ── Logger ────────────────────────────────────────────────────────────────
+  function log(msg, type = 'info') {
+    const el = document.createElement('div');
+    el.className = `log-entry ${type}`;
+    el.textContent = `${ts()} ${msg}`;
+    logList.appendChild(el);
+    logList.scrollTop = logList.scrollHeight;
+    refreshBadge();
+  }
+
+  function clearLogs() {
+    logList.innerHTML = '';
+    log('Log cleared.');
+  }
+  window.clearLogs = clearLogs; // expose for inline onclick
+
+  // ── Status bar ────────────────────────────────────────────────────────────
+  function updateStatus() {
+    const avail    = NativeBridge.isAvailable();
+    const hasToken = NativeBridge.hasSessionToken();
+
+    if (avail && hasToken) {
+      dot.className  = 'dot ready';
+      statusText.textContent = 'Bridge connected · Session token active';
+      warn.classList.remove('visible');
+    } else if (avail) {
+      dot.className  = 'dot partial';
+      statusText.textContent = 'Bridge connected · Awaiting session token…';
+      warn.classList.remove('visible');
+    } else {
+      dot.className  = 'dot';
+      statusText.textContent = 'AppBridge not detected — running in browser';
+      warn.classList.add('visible');
+    }
+  }
+
+  // ── Pending badge ─────────────────────────────────────────────────────────
+  function refreshBadge() {
+    const n = NativeBridge.pendingCount();
+    if (n > 0) {
+      badge.style.display = 'inline';
+      badge.textContent   = `${n} pending`;
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  // ── Listen for token events emitted by NativeBridge ──────────────────────
+  window.addEventListener('nativebridge:tokenset',     updateStatus);
+  window.addEventListener('nativebridge:tokencleared', updateStatus);
+
+  // ── Button handlers ───────────────────────────────────────────────────────
+  async function doPing() {
+    log('→ PING', 'send');
+    try {
+      const res = await NativeBridge.request('PING', { ts: Date.now() });
+      log(`← pong: ${JSON.stringify(res)}`, 'success');
+    } catch (e) {
+      log(`✗ ${e.message}`, 'error');
+    }
+    refreshBadge();
+  }
+
+  async function doGetProfile() {
+    log('→ GET_USER_PROFILE', 'send');
+    try {
+      const res = await NativeBridge.request('GET_USER_PROFILE');
+      log(`← ${JSON.stringify(res)}`, 'success');
+    } catch (e) {
+      log(`✗ ${e.message}`, 'error');
+    }
+    refreshBadge();
+  }
+
+  async function doGetDeviceInfo() {
+    log('→ GET_DEVICE_INFO', 'send');
+    try {
+      const res = await NativeBridge.request('GET_DEVICE_INFO');
+      log(`← ${JSON.stringify(res)}`, 'success');
+    } catch (e) {
+      log(`✗ ${e.message}`, 'error');
+    }
+    refreshBadge();
+  }
+
+  async function doSavePref() {
+    log('→ SAVE_PREFERENCE {key: theme, value: dark}', 'send');
+    try {
+      const res = await NativeBridge.request('SAVE_PREFERENCE', { key: 'theme', value: 'dark' });
+      log(`← ${JSON.stringify(res)}`, 'success');
+    } catch (e) {
+      log(`✗ ${e.message}`, 'error');
+    }
+    refreshBadge();
+  }
+
+  function doTokenCheck() {
+    if (NativeBridge.hasSessionToken()) {
+      log('🔑 Token present in closure memory (value intentionally hidden)', 'success');
+    } else {
+      log('⚠️  No token in memory — waiting for Flutter to inject it', 'warn');
+    }
+  }
+
+  async function doTriggerError() {
+    log('→ TRIGGER_ERROR', 'send');
+    try {
+      await NativeBridge.request('TRIGGER_ERROR');
+    } catch (e) {
+      log(`← Error caught gracefully: "${e.message}"`, 'error');
+    }
+    refreshBadge();
+  }
+
+  // Expose button handlers globally for inline onclick attributes
+  Object.assign(window, { doPing, doGetProfile, doGetDeviceInfo,
+                           doSavePref, doTokenCheck, doTriggerError });
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  updateStatus();
+  // Re-check status ~1.2s after load; Flutter injects the token asynchronously
+  setTimeout(updateStatus, 1200);
+})();
+</script>
+
+</body>
+</html>
