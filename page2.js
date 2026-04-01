@@ -27,7 +27,7 @@
   }
 
   function clearLogs() {
-    logList.innerHTML = '';
+    logList.replaceChildren();
     log('Log cleared.');
   }
 
