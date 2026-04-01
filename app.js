@@ -121,7 +121,7 @@
     if (!bridgeReady()) return;
     log('→ SAVE_PREFERENCE {key: theme, value: dark} [encrypted]', 'send');
     try {
-      const res = await window.sendToNative('SAVE_PREFERENCE', { key: 'theme', value: 'dark' });
+      const res = await window.sendToNative('SAVE_PREFERENCE', { key: 'theme', value: 'dark' }, {timeout: 60000});
       log(`← ${JSON.stringify(res)}`, 'success');
     } catch (e) {
       log(`✗ ${e.message}`, 'error');
